@@ -1,0 +1,23 @@
+import asyncio # библиотека Python для aсинхронного выполнения задач
+from telethon.sync import TelegramClient # Библиотека для работы с Telegram через API; .sync - модуль для синхронной работы; TelegramClient	- соединяется с Telegram, отправляет и получает сообщения
+
+# получить свои id и  hash можжно в https://my.telegram.org. (адрес https:... можно писать любой)
+api_id =  21077723 # твой id 
+api_hash = 'b8a7f0d3e1175395054cf22dc1154e71' # твой hash
+session_name = 'anon' # файл, в котором хранятся данные о твоей авторизации
+channel_username = 'jobs_juniors_remote'  # название канала без @
+limit = 10  #количество сообщений/постов для получения
+
+client = TelegramClient('anon', api_id, api_hash)
+
+async def main(): # в Jupyter это не нужно писать, потому что он может работать с ассинхронностью
+    await client.start() # Запуск и авторизация, если уже авторизовался, то в последующем не нужно этого делать, в anon.session всё сохранится
+    channel = await client.get_entity(channel_username) # Получаем объект канала
+
+    async for message in client.iter_messages(channel, limit=limit): # Метод Telethon, который асинхронно загружает сообщения
+        if message.message:  # получаем только текстовые сообщения/посты (пропуск медиа, стикеров)
+            print(f"[{message.date.strftime('%Y-%m-%d %H:%M:%S')}] {message.message[:150]}") # message.date.strftime(...) - форматирование даты и времени сообщения
+
+
+if __name__ == '__main__':
+    asyncio.run(main()) # для jupyter просто await main()
