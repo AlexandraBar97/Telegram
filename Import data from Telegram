@@ -1,0 +1,124 @@
+import asyncio
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.cm import get_cmap
+from telethon import TelegramClient # Библиотека для работы с Telegram через API; TelegramClient - соединяется с Telegram, отправляет и получает сообщения
+
+# получить свои id и  hash можжно в https://my.telegram.org. (адрес https:... можно писать любой)
+api_id =  21077723 # твой id 
+api_hash = 'b8a7f0d3e1175395054cf22dc1154e71' # твой hash
+session_name = 'anon' # файл, в котором хранятся данные о твоей авторизации
+channel_username = 'jobs_juniors_remote'  # название канала без @
+limit = 100  #количество сообщений/постов для получения
+
+client = TelegramClient('anon', api_id, api_hash)
+
+def calculate_basic_stats(df): # словарь со статистикой
+    stats = {
+        'Количество постов': len(df),
+        'Общее число просмотров': df['Просмотры'].sum(),
+        'Среднее число просмотров': df['Просмотры'].mean(),
+        'Медиана просмотров': df['Просмотры'].median(),
+        'Максимальное число просмотров': df['Просмотры'].max(),
+        'Минимальное число просмотров': df['Просмотры'].min()
+    }
+    return stats
+
+def prepare_df(df):
+    df = df.copy()
+    df['Дата'] = pd.to_datetime(df['Дата']) # функция Pandas, которая преобразует значения в формат даты-времени
+    df['День недели'] = df['Дата'].dt.day_name()# возвращает название дня недели и кладет в новую колонку
+    mapping = {
+        'Monday': 'Понедельник',
+        'Tuesday': 'Вторник',
+        'Wednesday': 'Среда',
+        'Thursday': 'Четверг',
+        'Friday': 'Пятница',
+        'Saturday': 'Суббота',
+        'Sunday': 'Воскресенье'
+    }
+    df['День недели'] = df['День недели'].map(mapping)#.map() метод в Pandas, который заменяет каждое значение согласно заданному соответствию
+    days_order = list(mapping.values()) #list(mapping.values()) создаст список только значений
+    df['День недели'] = pd.Categorical(df['День недели'], categories=days_order, ordered=True)# задаём правильный порядок и говорим Pandas, что категории упорядочены
+    return df
+
+
+def posts_by_day(df):
+    df = prepare_df(df)
+    return df.groupby('День недели').size().sort_index()# группирует строки, считает количество постов в день 
+
+def views_by_day(df):
+    df = prepare_df(df)
+    return df.groupby('День недели')['Просмотры'].mean().sort_index() # группирует строки, из каждой группы берётся только колонка просмотры, вычисляет среднее число просмотров для дня недели
+
+
+async def main(): # в Jupyter это не нужно писать, потому что он может работать с асинхронностью
+    await client.start() # Запуск и авторизация, если уже авторизовался, то в последующем не нужно этого делать, в anon.session всё сохранится
+    channel = await client.get_entity(channel_username) # Получаем объект канала
+
+    channel_data = [] # создаем список с данными канала
+
+    async for message in client.iter_messages(channel, limit=limit): # Метод Telethon, который асинхронно загружает сообщения
+        if message.message:
+            channel_data.append({ # добавляем в список словари, где ключи Дата, Текст, Просмотры
+                'Дата': message.date.strftime('%Y-%m-%d %H:%M:%S'),
+                'Текст': message.message.strip().replace('\n', ' '),
+                'Просмотры': message.views
+            })
+    df = pd.DataFrame(channel_data)
+    df.to_csv('telegram_messages.csv', index=False, encoding='utf-8-sig')
+    df.to_excel('telegram_messages.xlsx', index=False)
+
+    stats = calculate_basic_stats(df) # словарь со статистикой по всем постам
+    posts = posts_by_day(df) # количество постов по дням недели
+    views = views_by_day(df) # средние просмотры по дням недели
+    
+    print(f"\nБазовая статистика:"
+          f"\nКоличество постов: {stats['Количество постов']}"
+          f"\nОбщее число просмотров: {stats['Общее число просмотров']}"
+          f"\nСреднее число просмотров: {stats['Среднее число просмотров']:.2f}"
+          f"\nМедиана просмотров: {stats['Медиана просмотров']}"
+          f"\nМаксимальное число просмотров: {stats['Максимальное число просмотров']}"
+          f"\nМинимальное число просмотров: {stats['Минимальное число просмотров']}")
+    
+    print("\nПосты по дням недели:")
+    for day, count in posts.items():
+        print(f"{day}: {count}")
+    
+    print("\nСредние просмотры по дням недели:")
+    for day, avg_views in views.items():
+        print(f"{day}: {avg_views:.2f}")
+    
+    views = views_by_day(df)
+    short_names = {
+    'Понедельник': 'Пн',
+    'Вторник': 'Вт',
+    'Среда': 'Ср',
+    'Четверг': 'Чт',
+    'Пятница': 'Пт',
+    'Суббота': 'Сб',
+    'Воскресенье': 'Вс'
+    } # заменяем длинные названия на короткие
+    cmap = get_cmap('tab20b') # tab20b — это одна из встроенных цветовых схем
+    colors = [cmap(i) for i in range(len(views))] # список с цветами по количеству дней недели
+    plt.figure()
+    ax_views = views.plot(kind="bar", color=colors, legend=False)
+    plt.title("Средние просмотры по дням недели")
+    ax_views.set_xticklabels([short_names.get(day, day) for day in views.index]) # метод ax.set_xticklabels() заменяет метки на оси X, ax.set_yticklabels() - по оси Y
+    # .get(key, default) - возьми значение по ключу day из словаря short_name, если такого ключа нет — возвращай сам day без изменений»
+    plt.show()
+
+    cmap = get_cmap('tab20b') # tab20b — это одна из встроенных цветовых схем
+    colors_posts = [cmap(i) for i in range(len(posts))]
+    plt.figure()
+    ax_posts = posts.plot(kind="bar", color=colors, legend=False)
+    plt.title("Количество постов по дням недели")
+    ax_posts.set_xticklabels([short_names.get(day, day) for day in posts.index])
+    plt.title('Количество постов по дням')
+    plt.xlabel('Дата')
+    plt.ylabel('Количество постов')
+    plt.show()
+
+
+if __name__ == '__main__':
+    asyncio.run(main()) # для jupyter просто await main()
